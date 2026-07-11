@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cutline Studio — Sticker Preflight</title>
+<title>StickerHI Cutline Setup</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -107,7 +107,7 @@
   <main id="stage">
     <div id="topbar">
       <div>
-        <h1>Cutline Studio</h1>
+        <h1>StickerHI Cutline Setup</h1>
         <div id="statusLine">Drop an image to begin.</div>
       </div>
       <div class="topActions">
@@ -610,7 +610,8 @@ function maskBbox(mask, w, h) {
 }
 
 function closeMask(offPx, rPx) {
-  const w = state.workW, h = state.workH, n = w * h;
+  // operates in the PADDED workspace so offsets can extend past the canvas
+  const w = cache.pw, h = cache.ph, n = w * h;
   const D = cache.distOut;
   const t2 = (offPx + rPx) * (offPx + rPx);
   const dil = new Uint8Array(n);
@@ -626,13 +627,13 @@ function closeMask(offPx, rPx) {
 }
 
 function tracedFiltered(mask) {
-  return filterLoops(traceMask(mask, state.workW, state.workH), 0.05);
+  return filterLoops(traceMask(mask, cache.pw, cache.ph), 0.05);
 }
 
 function contourLoops(offPx, knifePx, bridge) {
   let loops = tracedFiltered(closeMask(offPx, knifePx));
   if (bridge && loops.length > 1) {
-    const maxR = 0.5 * state.params.dpi * state.workScale;
+    const maxR = Math.min(cache.pad, 0.5 * state.params.dpi * state.workScale);
     if (tracedFiltered(closeMask(offPx, maxR)).length <= 1) {
       let lo = knifePx, hi = maxR;
       for (let it = 0; it < 7; it++) {
@@ -642,7 +643,9 @@ function contourLoops(offPx, knifePx, bridge) {
       loops = tracedFiltered(closeMask(offPx, hi));
     }
   }
-  return loops;
+  // padded workspace -> work-image coordinates
+  const pad = cache.pad;
+  return loops.map(L => L.map(p => [p[0] - pad, p[1] - pad]));
 }
 
 function pipeline() {
@@ -656,17 +659,31 @@ function pipeline() {
   if (cache.aKey !== aKey) {
     cache.aKey = aKey;
     cache.alpha = (state.bgMode === 'flood') ? floodAlpha(p.tol) : imageAlphaWork();
-    cache.mask = null;
+    cache.mKey = '';
     cache.procDirty = true;
   }
-  if (!cache.mask) {
-    const n = state.workW * state.workH;
+  // pad the workspace so the offset can extend past the image canvas;
+  // sized from the sliders' maximums (0.25" offset + 0.2" knife) so dragging
+  // them never resizes the workspace and the EDT cache stays valid
+  const pad = Math.min(1024, Math.ceil(0.46 * p.dpi * k) + 8);
+  const mKey = aKey + '|' + pad;
+  if (cache.mKey !== mKey) {
+    cache.mKey = mKey;
+    const w = state.workW, h = state.workH, n = w * h;
     const m = new Uint8Array(n);
     const a = cache.alpha;
     for (let i = 0; i < n; i++) m[i] = a[i] >= 128 ? 1 : 0;
-    cache.mask = m;
-    cache.bbox = maskBbox(m, state.workW, state.workH);
-    cache.distOut = cache.bbox ? edtSq(m, state.workW, state.workH) : null;
+    cache.bbox = maskBbox(m, w, h);
+    cache.pad = pad;
+    cache.pw = w + 2 * pad;
+    cache.ph = h + 2 * pad;
+    if (cache.bbox) {
+      const pm = new Uint8Array(cache.pw * cache.ph);
+      for (let y = 0; y < h; y++) pm.set(m.subarray(y * w, (y + 1) * w), (y + pad) * cache.pw + pad);
+      cache.distOut = edtSq(pm, cache.pw, cache.ph);
+    } else {
+      cache.distOut = null;
+    }
     cache.cKey = '';
   }
   if (cache.procDirty) { rebuildProcFull(); cache.procDirty = false; }
