@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cutline Studio — Sticker Preflight</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #111827; background: #fff;
+  }
+  button { font: inherit; cursor: pointer; }
+  input { font: inherit; }
+  #app { display: flex; height: 100vh; }
+
+  /* ---------- stage (left) ---------- */
+  #stage { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 16px 20px 20px; }
+  #topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  #topbar h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  #statusLine { color: #9ca3af; font-size: 13px; margin-top: 2px; }
+  .topActions { display: flex; gap: 8px; }
+  .ghost {
+    border: 1px solid #a7f3d0; color: #059669; background: #fff;
+    border-radius: 9px; padding: 8px 14px; font-weight: 600;
+  }
+  .ghost:hover:not(:disabled) { background: #ecfdf5; }
+  .ghost:disabled { opacity: 0.45; cursor: default; }
+
+  #board {
+    position: relative; flex: 1; min-height: 0;
+    border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; overflow: hidden;
+  }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #dropHint {
+    position: absolute; inset: 24px; display: flex; flex-direction: column; gap: 6px;
+    align-items: center; justify-content: center; text-align: center;
+    border: 2px dashed #d1d5db; border-radius: 12px; color: #9ca3af; pointer-events: none;
+  }
+  #dropHint b { color: #6b7280; font-size: 16px; }
+  #board.dragging #dropHint { border-color: #10b981; color: #059669; }
+  #sizeBadge {
+    position: absolute; left: 16px; bottom: 16px; display: flex; gap: 10px; align-items: baseline;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06); font-weight: 700;
+  }
+  #badgeMs { color: #10b981; font-weight: 500; font-size: 12px; }
+
+  /* ---------- panel (right) ---------- */
+  #panel { width: 340px; flex: none; overflow-y: auto; padding: 20px 22px 40px; border-left: 1px solid #f3f4f6; }
+  #panel section { margin-bottom: 22px; }
+  #panel h3 { font-size: 14.5px; font-weight: 700; margin-bottom: 9px; }
+  .rowlabel { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .rowlabel .val { font-weight: 700; }
+  .sublabel { color: #374151; font-size: 13px; }
+  .hint { color: #9ca3af; font-size: 12px; margin-top: 4px; }
+  input[type="range"] { width: 100%; accent-color: #10b981; height: 22px; }
+  input[type="number"] {
+    width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 9px;
+  }
+  input[type="number"]:focus { outline: 2px solid #a7f3d0; border-color: #10b981; }
+
+  .seg { display: flex; flex-wrap: wrap; gap: 3px; background: #f3f4f6; padding: 4px; border-radius: 10px; }
+  .seg button {
+    border: 0; background: transparent; padding: 7px 13px; border-radius: 8px;
+    color: #6b7280; font-weight: 600;
+  }
+  .seg button.active { background: #fff; color: #111827; box-shadow: 0 1px 3px rgba(0,0,0,0.10); }
+
+  .chips { display: flex; gap: 6px; margin-bottom: 8px; }
+  .chips button {
+    border: 1px solid #d1fae5; color: #059669; background: #fff;
+    border-radius: 8px; padding: 5px 11px; font-weight: 600;
+  }
+  .chips button.active { background: #10b981; border-color: #10b981; color: #fff; }
+
+  .check { display: flex; gap: 8px; align-items: center; margin-top: 10px; color: #374151; }
+  .check input { accent-color: #10b981; width: 16px; height: 16px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid2 label { display: block; color: #6b7280; font-size: 12px; margin-bottom: 3px; }
+
+  .primary {
+    width: 100%; background: #10b981; border: 0; color: #fff; font-weight: 700;
+    border-radius: 10px; padding: 11px; margin-bottom: 8px;
+  }
+  .primary:hover:not(:disabled) { background: #0ea371; }
+  .secondary {
+    width: 100%; background: #fff; border: 1px solid #a7f3d0; color: #059669; font-weight: 600;
+    border-radius: 10px; padding: 10px;
+  }
+  .secondary:hover:not(:disabled) { background: #ecfdf5; }
+  .primary:disabled, .secondary:disabled { opacity: 0.45; cursor: default; }
+  .linkbtn { border: 0; background: none; color: #059669; font-weight: 600; padding: 0; text-decoration: underline; }
+  [hidden] { display: none !important; }
+
+  @media (max-width: 760px) {
+    #app { flex-direction: column; height: auto; }
+    #board { height: 55vh; }
+    #panel { width: auto; border-left: 0; border-top: 1px solid #f3f4f6; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="topbar">
+      <div>
+        <h1>Cutline Studio</h1>
+        <div id="statusLine">Drop an image to begin.</div>
+      </div>
+      <div class="topActions">
+        <button id="btnRemoveBg" class="ghost" disabled>&#9680; Remove background</button>
+        <button id="btnNewImage" class="ghost">&#8682; New image</button>
+      </div>
+    </div>
+    <div id="board">
+      <canvas id="cv"></canvas>
+      <div id="dropHint">
+        <b>Drop, paste, or upload an image</b>
+        <span>PNG or JPG &middot; everything stays in your browser</span>
+      </div>
+      <div id="sizeBadge" hidden>
+        <span id="badgeSize">&ndash;</span>
+        <span id="badgeMs"></span>
+      </div>
+    </div>
+  </main>
+
+  <aside id="panel">
+    <section>
+      <h3>Cut line type</h3>
+      <div class="seg" id="cutTypeSeg">
+        <button data-type="contour" class="active">Contour</button>
+        <button data-type="rect">Rectangle</button>
+        <button data-type="square">Square</button>
+        <button data-type="circle">Circle</button>
+        <button data-type="oval">Oval</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="rowlabel"><h3>Offset (bleed)</h3><span class="val" id="offsetVal">0.125&Prime;</span></div>
+      <div class="chips" id="offsetChips">
+        <button data-v="0">0</button>
+        <button data-v="0.0625">1/16&Prime;</button>
+        <button data-v="0.125" class="active">1/8&Prime;</button>
+      </div>
+      <input type="range" id="offsetSlider" min="0" max="0.25" step="0.0025" value="0.125">
+    </section>
+
+    <section>
+      <div class="rowlabel"><h3>Smoothness</h3><span class="val" id="smoothVal">0.40</span></div>
+      <input type="range" id="smoothSlider" min="0" max="1" step="0.01" value="0.4">
+    </section>
+
+    <section>
+      <div class="rowlabel"><h3>Drag-knife safety</h3><span class="val" id="knifeVal">0.080&Prime;</span></div>
+      <input type="range" id="knifeSlider" min="0" max="0.2" step="0.005" value="0.08">
+      <div class="hint">Rounds out concave notches tighter than this radius.</div>
+      <label class="check"><input type="checkbox" id="bridgeChk"> Auto-bridge separate islands into one cut</label>
+    </section>
+
+    <section id="bgSection" hidden>
+      <div class="rowlabel"><h3>Background tolerance</h3><span class="val" id="tolVal">40</span></div>
+      <input type="range" id="tolSlider" min="0" max="120" step="1" value="40">
+      <div class="hint">How aggressively edge colors count as background. <button class="linkbtn" id="btnRestore">Restore original</button></div>
+    </section>
+
+    <section>
+      <h3>Size</h3>
+      <div class="grid2">
+        <div><label>W (inches)</label><input type="number" id="wIn" step="0.01" min="0.05"></div>
+        <div><label>H (inches)</label><input type="number" id="hIn" step="0.01" min="0.05"></div>
+      </div>
+      <div style="margin-top:10px">
+        <label style="color:#6b7280;font-size:12px;display:block;margin-bottom:3px">DPI (pixels per inch)</label>
+        <input type="number" id="dpiIn" step="1" min="10" max="2400" value="300">
+      </div>
+      <div class="hint">Editing W or H rescales by adjusting DPI. 300 DPI is standard for print.</div>
+    </section>
+
+    <section>
+      <h3>Export</h3>
+      <button class="primary" id="btnPdf" disabled>Download PDF (CutContour)</button>
+      <button class="secondary" id="btnPng" disabled>Download PNG with bleed</button>
+      <div class="hint">The PDF embeds your artwork plus the cutline as a &ldquo;CutContour&rdquo; spot-color stroke &mdash; the format print shops&rsquo; RIP software expects.</div>
+    </section>
+  </aside>
+</div>
+<input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" hidden>
+
+<script>
+(() => {
+'use strict';
+
+/* __CORE_START__  (DOM-free algorithms; also exercised by node tests) */
+
+// ---------- Exact Euclidean distance transform (Felzenszwalb & Huttenlocher) ----------
+// Returns Float32Array of SQUARED distances from each pixel to the nearest truthy source pixel.
+function edtSq(src, w, h) {
+  const n = w * h, m = Math.max(w, h), INF = 1e18;
+  const g = new Float64Array(n);
+  const f = new Float64Array(m), d = new Float64Array(m);
+  const v = new Int32Array(m), z = new Float64Array(m + 1);
+  for (let i = 0; i < n; i++) g[i] = src[i] ? 0 : INF;
+
+  function dt1(len) {
+    let k = 0;
+    v[0] = 0; z[0] = -INF; z[1] = INF;
+    for (let q = 1; q < len; q++) {
+      let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      while (s <= z[k]) {
+        k--;
+        s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      }
+      k++;
+      v[k] = q; z[k] = s; z[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < len; q++) {
+      while (z[k + 1] < q) k++;
+      const dx = q - v[k];
+      d[q] = dx * dx + f[v[k]];
+    }
+  }
+
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) f[y] = g[y * w + x];
+    dt1(h);
+    for (let y = 0; y < h; y++) g[y * w + x] = d[y];
+  }
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) f[x] = g[row + x];
+    dt1(w);
+    for (let x = 0; x < w; x++) g[row + x] = d[x];
+  }
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = g[i];
+  return out;
+}
+
+// ---------- Marching squares: binary mask -> closed contour loops ----------
+// Directed so that "inside" is on the LEFT of travel (y-down screen coords).
+// Returns array of loops; each loop is an array of [x, y] in image pixel coords.
+function traceMask(mask, w, h) {
+  const H = h + 2;                                  // padded height (for vertex keys)
+  const px = (x, y) => (x >= 1 && x <= w && y >= 1 && y <= h) ? mask[(y - 1) * w + (x - 1)] : 0;
+  const key = (x2, y2) => x2 * (2 * H + 2) + y2;
+  const segs = new Map();                           // startKey -> [start, end]
+
+  for (let cy = 0; cy <= h; cy++) {
+    for (let cx = 0; cx <= w; cx++) {
+      const tl = px(cx, cy), tr = px(cx + 1, cy), bl = px(cx, cy + 1), br = px(cx + 1, cy + 1);
+      const code = (tl ? 8 : 0) | (tr ? 4 : 0) | (br ? 2 : 0) | (bl ? 1 : 0);
+      if (code === 0 || code === 15) continue;
+      // edge midpoints, in doubled padded coords (all integers)
+      const T = [2 * cx + 2, 2 * cy + 1], B = [2 * cx + 2, 2 * cy + 3];
+      const L = [2 * cx + 1, 2 * cy + 2], R = [2 * cx + 3, 2 * cy + 2];
+      const add = (a, b) => segs.set(key(a[0], a[1]), [a, b]);
+      switch (code) {
+        case 1:  add(B, L); break;
+        case 2:  add(R, B); break;
+        case 3:  add(R, L); break;
+        case 4:  add(T, R); break;
+        case 5:  add(T, R); add(B, L); break;   // saddle: treat center as background
+        case 6:  add(T, B); break;
+        case 7:  add(T, L); break;
+        case 8:  add(L, T); break;
+        case 9:  add(B, T); break;
+        case 10: add(L, T); add(R, B); break;   // saddle: treat center as background
+        case 11: add(R, T); break;
+        case 12: add(L, R); break;
+        case 13: add(B, R); break;
+        case 14: add(L, B); break;
+      }
+    }
+  }
+
+  const loops = [];
+  const used = new Set();
+  for (const [k0, first] of segs) {
+    if (used.has(k0)) continue;
+    const pts = [];
+    let ck = k0, cur = first;
+    while (cur && !used.has(ck)) {
+      used.add(ck);
+      pts.push(cur[0]);
+      ck = key(cur[1][0], cur[1][1]);
+      cur = segs.get(ck);
+    }
+    if (pts.length >= 3) {
+      loops.push(pts.map(p => [p[0] / 2 - 1, p[1] / 2 - 1]));
+    }
+  }
+  return loops;
+}
+
+function polyArea(pts) {
+  let a = 0;
+  for (let i = 0, n = pts.length; i < n; i++) {
+    const p = pts[i], q = pts[(i + 1) % n];
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return a / 2;
+}
+
+// Keep outer loops only: same orientation as the biggest loop, and at least
+// minFrac of its area. Holes (opposite orientation) are dropped.
+function filterLoops(loops, minFrac) {
+  if (!loops.length) return [];
+  const areas = loops.map(polyArea);
+  let big = 0;
+  for (let i = 1; i < loops.length; i++) if (Math.abs(areas[i]) > Math.abs(areas[big])) big = i;
+  const sign = Math.sign(areas[big]) || 1;
+  const cut = Math.abs(areas[big]) * minFrac;
+  return loops.filter((_, i) => Math.sign(areas[i]) === sign && Math.abs(areas[i]) >= cut);
+}
+
+// ---------- Polygon smoothing ----------
+function neighborSmoothClosed(pts, passes) {
+  let a = pts;
+  for (let p = 0; p < passes; p++) {
+    const n = a.length, b = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const pm = a[(i + n - 1) % n], pc = a[i], pn = a[(i + 1) % n];
+      b[i] = [(pm[0] + 2 * pc[0] + pn[0]) / 4, (pm[1] + 2 * pc[1] + pn[1]) / 4];
+    }
+    a = b;
+  }
+  return a;
+}
+
+function rdp(pts, eps) {          // open polyline, iterative Douglas-Peucker
+  const n = pts.length;
+  if (n < 3) return pts.slice();
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const stack = [[0, n - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const ax = pts[a][0], ay = pts[a][1], bx = pts[b][0], by = pts[b][1];
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy || 1e-12;
+    let worst = -1, wd = 0;
+    for (let i = a + 1; i < b; i++) {
+      const t = ((pts[i][0] - ax) * dx + (pts[i][1] - ay) * dy) / len2;
+      const cx = ax + t * dx, cyy = ay + t * dy;
+      const ddx = pts[i][0] - cx, ddy = pts[i][1] - cyy;
+      const d2 = ddx * ddx + ddy * ddy;
+      if (d2 > wd) { wd = d2; worst = i; }
+    }
+    if (worst >= 0 && wd > eps * eps) {
+      keep[worst] = 1;
+      stack.push([a, worst], [worst, b]);
+    }
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
+  return out;
+}
+
+function rdpClosed(pts, eps) {
+  const n = pts.length;
+  if (n < 5) return pts.slice();
+  // rotate so we anchor at the point farthest from the centroid
+  let cx = 0, cy = 0;
+  for (const p of pts) { cx += p[0]; cy += p[1]; }
+  cx /= n; cy /= n;
+  let far = 0, fd = -1;
+  for (let i = 0; i < n; i++) {
+    const dx = pts[i][0] - cx, dy = pts[i][1] - cy, d = dx * dx + dy * dy;
+    if (d > fd) { fd = d; far = i; }
+  }
+  const rot = pts.slice(far).concat(pts.slice(0, far));
+  rot.push(rot[0]);
+  const out = rdp(rot, eps);
+  out.pop();
+  return out.length >= 3 ? out : pts.slice();
+}
+
+function chaikinClosed(pts, iters) {
+  let a = pts;
+  for (let it = 0; it < iters; it++) {
+    const n = a.length, b = new Array(2 * n);
+    for (let i = 0; i < n; i++) {
+      const p = a[i], q = a[(i + 1) % n];
+      b[2 * i]     = [0.75 * p[0] + 0.25 * q[0], 0.75 * p[1] + 0.25 * q[1]];
+      b[2 * i + 1] = [0.25 * p[0] + 0.75 * q[0], 0.25 * p[1] + 0.75 * q[1]];
+    }
+    a = b;
+  }
+  return a;
+}
+
+function smoothLoop(pts, s) {
+  let a = neighborSmoothClosed(pts, 2 + Math.round(s * 28));
+  a = rdpClosed(a, 0.3 + s * 1.2);
+  a = chaikinClosed(a, 2);
+  return a;
+}
+
+// ---------- Minimal PDF writer with CutContour spot color ----------
+// pathCmds: array of ['m',x,y] | ['l',x,y] | ['c',x1,y1,x2,y2,x3,y3] | ['h']
+// Coordinates already in PDF points (origin bottom-left).
+function buildPdf({ jpeg, imgW, imgH, pageW, pageH, pathCmds, strokePt }) {
+  const enc = new TextEncoder();
+  const chunks = [];
+  let pos = 0;
+  const push = (data) => {
+    const b = typeof data === 'string' ? enc.encode(data) : data;
+    chunks.push(b);
+    pos += b.length;
+  };
+  const offsets = [];
+  const beginObj = (n) => { offsets[n] = pos; push(n + ' 0 obj\n'); };
+  const N = (x) => (Math.round(x * 100) / 100).toString();
+
+  push('%PDF-1.4\n');
+  push(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]));   // binary marker comment
+
+  beginObj(1); push('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  beginObj(2); push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+  beginObj(3);
+  push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + N(pageW) + ' ' + N(pageH) + '] ' +
+       '/Resources << /XObject << /Im0 4 0 R >> /ColorSpace << /CutContour 6 0 R >> >> ' +
+       '/Contents 5 0 R >>\nendobj\n');
+  beginObj(4);
+  push('<< /Type /XObject /Subtype /Image /Width ' + imgW + ' /Height ' + imgH +
+       ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' +
+       jpeg.length + ' >>\nstream\n');
+  push(jpeg);
+  push('\nendstream\nendobj\n');
+
+  let cs = 'q ' + N(pageW) + ' 0 0 ' + N(pageH) + ' 0 0 cm /Im0 Do Q\n' +
+           '/CutContour CS 1 SCN ' + N(strokePt) + ' w 1 J 1 j\n';
+  for (const c of pathCmds) {
+    if (c[0] === 'h') cs += 'h\n';
+    else cs += c.slice(1).map(N).join(' ') + ' ' + c[0] + '\n';
+  }
+  cs += 'S\n';
+  beginObj(5);
+  push('<< /Length ' + cs.length + ' >>\nstream\n' + cs + 'endstream\nendobj\n');
+
+  beginObj(6); push('[/Separation /CutContour /DeviceCMYK 7 0 R]\nendobj\n');
+  beginObj(7);
+  push('<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 1 0 0] /N 1 >>\nendobj\n');
+
+  const xrefPos = pos;
+  let xref = 'xref\n0 8\n0000000000 65535 f \n';
+  for (let i = 1; i <= 7; i++) xref += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+  push(xref);
+  push('trailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n' + xrefPos + '\n%%EOF\n');
+
+  const out = new Uint8Array(pos);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
+
+// Ellipse -> 4 cubic Beziers (kappa approximation)
+function ellipseCmds(cx, cy, rx, ry) {
+  const k = 0.5522847498;
+  return [
+    ['m', cx + rx, cy],
+    ['c', cx + rx, cy + k * ry, cx + k * rx, cy + ry, cx, cy + ry],
+    ['c', cx - k * rx, cy + ry, cx - rx, cy + k * ry, cx - rx, cy],
+    ['c', cx - rx, cy - k * ry, cx - k * rx, cy - ry, cx, cy - ry],
+    ['c', cx + k * rx, cy - ry, cx + rx, cy - k * ry, cx + rx, cy],
+    ['h']
+  ];
+}
+
+/* __CORE_END__ */
+
+// =====================================================================
+//  App state
+// =====================================================================
+const WORK_MAX = 1000;              // long-side cap for interactive mask math
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  img: null,              // full-res source (ImageBitmap or HTMLImageElement)
+  imgId: 0,
+  fileBase: 'sticker',
+  fullW: 0, fullH: 0,
+  workW: 0, workH: 0,
+  workScale: 1,
+  workData: null,         // ImageData at work res
+  nativeAlpha: false,
+  bgMode: 'none',         // 'none' | 'flood'
+  result: null,           // {kind:'loops',loops} | {kind:'rect',...} | {kind:'ellipse',...}
+  lastMs: 0,
+  params: { cutType: 'contour', offsetIn: 0.125, smooth: 0.4, knifeIn: 0.08, tol: 40, dpi: 300, bridge: false }
+};
+const cache = {};         // pipeline stage caches
+let procFull = null;      // full-res canvas: artwork with background removed
+
+// =====================================================================
+//  Background removal
+// =====================================================================
+function imageAlphaWork() {
+  const d = state.workData.data, n = state.workW * state.workH;
+  const a = new Uint8Array(n);
+  for (let i = 0; i < n; i++) a[i] = d[i * 4 + 3];
+  return a;
+}
+
+function floodAlpha(tol) {
+  const w = state.workW, h = state.workH, d = state.workData.data, n = w * h;
+
+  // representative border colors (merge-average, max 8)
+  const reps = [];
+  const sample = (idx) => {
+    const r = d[idx * 4], g = d[idx * 4 + 1], b = d[idx * 4 + 2];
+    for (const c of reps) {
+      const dr = r - c[0], dg = g - c[1], db = b - c[2];
+      if (dr * dr + dg * dg + db * db < 1024) {
+        const m = c[3];
+        c[0] = (c[0] * m + r) / (m + 1); c[1] = (c[1] * m + g) / (m + 1);
+        c[2] = (c[2] * m + b) / (m + 1); c[3] = m + 1;
+        return;
+      }
+    }
+    if (reps.length < 8) reps.push([r, g, b, 1]);
+  };
+  for (let x = 0; x < w; x += 2) { sample(x); sample((h - 1) * w + x); }
+  for (let y = 0; y < h; y += 2) { sample(y * w); sample(y * w + w - 1); }
+
+  const distBg = (i) => {
+    const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2];
+    let best = 1e9;
+    for (const c of reps) {
+      const dr = r - c[0], dg = g - c[1], db = b - c[2];
+      const dd = dr * dr + dg * dg + db * db;
+      if (dd < best) best = dd;
+    }
+    return Math.sqrt(best);
+  };
+
+  const alpha = new Uint8Array(n).fill(255);
+  const seen = new Uint8Array(n);
+  const stack = [];
+  const tryPush = (i) => {
+    if (!seen[i] && distBg(i) <= tol) { seen[i] = 1; alpha[i] = 0; stack.push(i); }
+  };
+  for (let x = 0; x < w; x++) { tryPush(x); tryPush((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { tryPush(y * w); tryPush(y * w + w - 1); }
+  while (stack.length) {
+    const i = stack.pop();
+    const x = i % w, y = (i / w) | 0;
+    if (x > 0) tryPush(i - 1);
+    if (x < w - 1) tryPush(i + 1);
+    if (y > 0) tryPush(i - w);
+    if (y < h - 1) tryPush(i + w);
+  }
+
+  // feather: soften kept pixels that border background and are near the bg color
+  const ramp = 0.5 * tol + 2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!alpha[i]) continue;
+      const nb = (x > 0 && !alpha[i - 1]) || (x < w - 1 && !alpha[i + 1]) ||
+                 (y > 0 && !alpha[i - w]) || (y < h - 1 && !alpha[i + w]);
+      if (!nb) continue;
+      const t = (distBg(i) - tol) / ramp;
+      alpha[i] = Math.max(0, Math.min(255, Math.round(255 * t)));
+    }
+  }
+  // one 3x3 box blur for anti-aliased edges
+  const out = new Uint8Array(n);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0, c = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          s += alpha[yy * w + xx]; c++;
+        }
+      }
+      out[y * w + x] = Math.round(s / c);
+    }
+  }
+  return out;
+}
+
+// =====================================================================
+//  Pipeline
+// =====================================================================
+function maskBbox(mask, w, h) {
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      if (mask[row + x]) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+  }
+  return x1 < 0 ? null : { x0, y0, x1, y1 };
+}
+
+function closeMask(offPx, rPx) {
+  const w = state.workW, h = state.workH, n = w * h;
+  const D = cache.distOut;
+  const t2 = (offPx + rPx) * (offPx + rPx);
+  const dil = new Uint8Array(n);
+  for (let i = 0; i < n; i++) dil[i] = D[i] <= t2 ? 1 : 0;
+  if (rPx <= 0.01) return dil;
+  const bg = new Uint8Array(n);
+  for (let i = 0; i < n; i++) bg[i] = dil[i] ^ 1;
+  const din = edtSq(bg, w, h);
+  const r2 = rPx * rPx;
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) out[i] = din[i] > r2 ? 1 : 0;
+  return out;
+}
+
+function tracedFiltered(mask) {
+  return filterLoops(traceMask(mask, state.workW, state.workH), 0.05);
+}
+
+function contourLoops(offPx, knifePx, bridge) {
+  let loops = tracedFiltered(closeMask(offPx, knifePx));
+  if (bridge && loops.length > 1) {
+    const maxR = 0.5 * state.params.dpi * state.workScale;
+    if (tracedFiltered(closeMask(offPx, maxR)).length <= 1) {
+      let lo = knifePx, hi = maxR;
+      for (let it = 0; it < 7; it++) {
+        const mid = (lo + hi) / 2;
+        if (tracedFiltered(closeMask(offPx, mid)).length <= 1) hi = mid; else lo = mid;
+      }
+      loops = tracedFiltered(closeMask(offPx, hi));
+    }
+  }
+  return loops;
+}
+
+function pipeline() {
+  if (!state.img) return;
+  const p = state.params, k = state.workScale;
+  const t0 = performance.now();
+  const offPx = p.offsetIn * p.dpi * k;
+  const knifePx = p.knifeIn * p.dpi * k;
+
+  const aKey = state.imgId + '|' + state.bgMode + '|' + p.tol;
+  if (cache.aKey !== aKey) {
+    cache.aKey = aKey;
+    cache.alpha = (state.bgMode === 'flood') ? floodAlpha(p.tol) : imageAlphaWork();
+    cache.mask = null;
+    cache.procDirty = true;
+  }
+  if (!cache.mask) {
+    const n = state.workW * state.workH;
+    const m = new Uint8Array(n);
+    const a = cache.alpha;
+    for (let i = 0; i < n; i++) m[i] = a[i] >= 128 ? 1 : 0;
+    cache.mask = m;
+    cache.bbox = maskBbox(m, state.workW, state.workH);
+    cache.distOut = cache.bbox ? edtSq(m, state.workW, state.workH) : null;
+    cache.cKey = '';
+  }
+  if (cache.procDirty) { rebuildProcFull(); cache.procDirty = false; }
+
+  if (!cache.bbox) {
+    state.result = null;
+    setStatus('No opaque pixels found — try lowering the tolerance.');
+  } else if (p.cutType === 'contour') {
+    const cKey = cache.aKey + '|' + offPx.toFixed(2) + '|' + knifePx.toFixed(2) + '|' + p.bridge;
+    if (cache.cKey !== cKey) {
+      cache.cKey = cKey;
+      cache.rawLoops = contourLoops(offPx, knifePx, p.bridge);
+      cache.sKey = '';
+    }
+    const sKey = cKey + '|' + p.smooth;
+    if (cache.sKey !== sKey) {
+      cache.sKey = sKey;
+      cache.loops = cache.rawLoops.map(L => smoothLoop(L, p.smooth)).filter(L => L.length >= 4);
+    }
+    state.result = { kind: 'loops', loops: cache.loops };
+  } else {
+    const b = cache.bbox;
+    const bw = b.x1 - b.x0 + 1, bh = b.y1 - b.y0 + 1;
+    const cx = b.x0 + bw / 2, cy = b.y0 + bh / 2;
+    if (p.cutType === 'rect') {
+      state.result = { kind: 'rect', x: b.x0 - offPx, y: b.y0 - offPx, w: bw + 2 * offPx, h: bh + 2 * offPx };
+    } else if (p.cutType === 'square') {
+      const side = Math.max(bw, bh) + 2 * offPx;
+      state.result = { kind: 'rect', x: cx - side / 2, y: cy - side / 2, w: side, h: side };
+    } else if (p.cutType === 'circle') {
+      const r = Math.sqrt(bw * bw + bh * bh) / 2 + offPx;
+      state.result = { kind: 'ellipse', cx, cy, rx: r, ry: r };
+    } else {
+      state.result = { kind: 'ellipse', cx, cy, rx: (bw / 2) * Math.SQRT2 + offPx, ry: (bh / 2) * Math.SQRT2 + offPx };
+    }
+  }
+
+  state.lastMs = performance.now() - t0;
+  draw();
+  updateReadouts();
+}
+
+let rafPending = false;
+function scheduleRun() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; pipeline(); });
+}
+
+function resultBounds(r) {
+  if (!r) return null;
+  if (r.kind === 'rect') return { x: r.x, y: r.y, w: r.w, h: r.h };
+  if (r.kind === 'ellipse') return { x: r.cx - r.rx, y: r.cy - r.ry, w: 2 * r.rx, h: 2 * r.ry };
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const L of r.loops) for (const p of L) {
+    if (p[0] < x0) x0 = p[0];
+    if (p[0] > x1) x1 = p[0];
+    if (p[1] < y0) y0 = p[1];
+    if (p[1] > y1) y1 = p[1];
+  }
+  if (x1 < x0) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+// =====================================================================
+//  Rendering
+// =====================================================================
+const cv = $('cv');
+const ctx = cv.getContext('2d');
+let checkerPat = null;
+
+function rebuildProcFull() {
+  procFull = document.createElement('canvas');
+  procFull.width = state.fullW;
+  procFull.height = state.fullH;
+  const c = procFull.getContext('2d');
+  c.drawImage(state.img, 0, 0);
+  if (state.bgMode === 'flood') {
+    const mc = document.createElement('canvas');
+    mc.width = state.workW;
+    mc.height = state.workH;
+    const mctx = mc.getContext('2d');
+    const id = mctx.createImageData(state.workW, state.workH);
+    const a = cache.alpha;
+    for (let i = 0; i < a.length; i++) id.data[i * 4 + 3] = a[i];
+    mctx.putImageData(id, 0, 0);
+    c.globalCompositeOperation = 'destination-in';
+    c.imageSmoothingEnabled = true;
+    c.drawImage(mc, 0, 0, state.fullW, state.fullH);
+    c.globalCompositeOperation = 'source-over';
+  }
+}
+
+function draw() {
+  const board = $('board');
+  const dpr = window.devicePixelRatio || 1;
+  const bw = board.clientWidth, bh = board.clientHeight;
+  if (cv.width !== Math.round(bw * dpr) || cv.height !== Math.round(bh * dpr)) {
+    cv.width = Math.round(bw * dpr);
+    cv.height = Math.round(bh * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, bw, bh);
+  if (!state.img) return;
+
+  const pad = 28;
+  const s = Math.min((bw - 2 * pad) / state.fullW, (bh - 2 * pad) / state.fullH);
+  const iw = state.fullW * s, ih = state.fullH * s;
+  const ox = (bw - iw) / 2, oy = (bh - ih) / 2;
+
+  if (!checkerPat) {
+    const pc = document.createElement('canvas');
+    pc.width = pc.height = 24;
+    const px = pc.getContext('2d');
+    px.fillStyle = '#ffffff'; px.fillRect(0, 0, 24, 24);
+    px.fillStyle = '#eef0f3'; px.fillRect(0, 0, 12, 12); px.fillRect(12, 12, 12, 12);
+    checkerPat = ctx.createPattern(pc, 'repeat');
+  }
+  ctx.fillStyle = checkerPat;
+  ctx.fillRect(ox, oy, iw, ih);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(procFull, ox, oy, iw, ih);
+
+  const r = state.result;
+  if (!r) return;
+  const kInv = s / state.workScale;         // work px -> screen px
+  const X = (x) => ox + x * kInv;
+  const Y = (y) => oy + y * kInv;
+
+  ctx.beginPath();
+  if (r.kind === 'loops') {
+    for (const L of r.loops) {
+      ctx.moveTo(X(L[0][0]), Y(L[0][1]));
+      for (let i = 1; i < L.length; i++) ctx.lineTo(X(L[i][0]), Y(L[i][1]));
+      ctx.closePath();
+    }
+  } else if (r.kind === 'rect') {
+    ctx.rect(X(r.x), Y(r.y), r.w * kInv, r.h * kInv);
+  } else {
+    ctx.ellipse(X(r.cx), Y(r.cy), r.rx * kInv, r.ry * kInv, 0, 0, Math.PI * 2);
+  }
+  ctx.setLineDash([7, 5]);
+  ctx.lineWidth = 1.7;
+  ctx.strokeStyle = '#f0f';
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// =====================================================================
+//  UI wiring
+// =====================================================================
+function setStatus(t) { $('statusLine').textContent = t; }
+
+function fmtIn(v, dec) { return v.toFixed(dec == null ? 3 : dec).replace(/0+$/, '').replace(/\.$/, '') + '″'; }
+
+function updateReadouts() {
+  const p = state.params;
+  $('offsetVal').textContent = fmtIn(p.offsetIn);
+  $('smoothVal').textContent = p.smooth.toFixed(2);
+  $('knifeVal').textContent = fmtIn(p.knifeIn);
+  $('tolVal').textContent = p.tol;
+  for (const b of $('offsetChips').children) {
+    b.classList.toggle('active', Math.abs(parseFloat(b.dataset.v) - p.offsetIn) < 1e-9);
+  }
+
+  const bounds = resultBounds(state.result);
+  const badge = $('sizeBadge');
+  if (!bounds || !state.img) { badge.hidden = true; return; }
+  badge.hidden = false;
+  const wI = bounds.w / state.workScale / p.dpi;
+  const hI = bounds.h / state.workScale / p.dpi;
+  $('badgeSize').textContent = wI.toFixed(2) + '″ × ' + hI.toFixed(2) + '″';
+  $('badgeMs').textContent = state.lastMs.toFixed(1) + ' ms';
+  $('badgeMs').style.color = state.lastMs < 50 ? '#10b981' : '#d97706';
+  const ae = document.activeElement;
+  if (ae !== $('wIn')) $('wIn').value = wI.toFixed(2);
+  if (ae !== $('hIn')) $('hIn').value = hI.toFixed(2);
+  if (ae !== $('dpiIn')) $('dpiIn').value = Math.round(p.dpi);
+}
+
+function bindSlider(id, key, parse) {
+  $(id).addEventListener('input', (e) => {
+    state.params[key] = parse ? parse(e.target.value) : parseFloat(e.target.value);
+    scheduleRun();
+  });
+}
+bindSlider('offsetSlider', 'offsetIn');
+bindSlider('smoothSlider', 'smooth');
+bindSlider('knifeSlider', 'knifeIn');
+bindSlider('tolSlider', 'tol', (v) => parseInt(v, 10));
+
+$('offsetChips').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  state.params.offsetIn = parseFloat(b.dataset.v);
+  $('offsetSlider').value = state.params.offsetIn;
+  scheduleRun();
+});
+
+$('cutTypeSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  for (const x of $('cutTypeSeg').children) x.classList.toggle('active', x === b);
+  state.params.cutType = b.dataset.type;
+  scheduleRun();
+});
+
+$('bridgeChk').addEventListener('change', (e) => {
+  state.params.bridge = e.target.checked;
+  scheduleRun();
+});
+
+$('dpiIn').addEventListener('change', (e) => {
+  const v = parseFloat(e.target.value);
+  if (v >= 10 && v <= 2400) { state.params.dpi = v; pipeline(); }
+});
+
+function rescaleTo(inches, dim) {
+  if (!(inches > 0.05) || !state.result) return;
+  for (let i = 0; i < 2; i++) {
+    const b = resultBounds(state.result);
+    if (!b) return;
+    const px = (dim === 'w' ? b.w : b.h) / state.workScale;
+    state.params.dpi = Math.min(2400, Math.max(10, px / inches));
+    pipeline();
+  }
+}
+$('wIn').addEventListener('change', (e) => rescaleTo(parseFloat(e.target.value), 'w'));
+$('hIn').addEventListener('change', (e) => rescaleTo(parseFloat(e.target.value), 'h'));
+
+$('btnRemoveBg').addEventListener('click', () => {
+  if (!state.img) return;
+  if (state.nativeAlpha && state.bgMode === 'none') {
+    setStatus('This image already has transparency — using its own alpha channel.');
+    return;
+  }
+  state.bgMode = 'flood';
+  $('bgSection').hidden = false;
+  setStatus('Background removed. Fine-tune with the tolerance slider.');
+  pipeline();
+});
+
+$('btnRestore').addEventListener('click', () => {
+  state.bgMode = 'none';
+  $('bgSection').hidden = true;
+  setStatus(state.nativeAlpha ? 'Restored — using the image’s own transparency.' : 'Restored original image.');
+  pipeline();
+});
+
+$('btnNewImage').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', (e) => {
+  if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+  e.target.value = '';
+});
+
+const board = $('board');
+board.addEventListener('dragover', (e) => { e.preventDefault(); board.classList.add('dragging'); });
+board.addEventListener('dragleave', () => board.classList.remove('dragging'));
+board.addEventListener('drop', (e) => {
+  e.preventDefault();
+  board.classList.remove('dragging');
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+window.addEventListener('paste', (e) => {
+  for (const item of (e.clipboardData || {}).items || []) {
+    if (item.type.startsWith('image/')) { loadFile(item.getAsFile()); return; }
+  }
+});
+board.addEventListener('click', () => { if (!state.img) $('fileInput').click(); });
+window.addEventListener('resize', () => draw());
+
+// =====================================================================
+//  Image loading
+// =====================================================================
+async function loadFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  setStatus('Loading…');
+  let img;
+  try {
+    img = await createImageBitmap(file);
+  } catch (err) {
+    img = await new Promise((res, rej) => {
+      const el = new Image();
+      el.onload = () => res(el);
+      el.onerror = rej;
+      el.src = URL.createObjectURL(file);
+    });
+  }
+  state.img = img;
+  state.imgId++;
+  state.fileBase = (file.name || 'sticker').replace(/\.[^.]+$/, '') || 'sticker';
+  state.fullW = img.width;
+  state.fullH = img.height;
+  state.workScale = Math.min(1, WORK_MAX / Math.max(img.width, img.height));
+  state.workW = Math.max(1, Math.round(img.width * state.workScale));
+  state.workH = Math.max(1, Math.round(img.height * state.workScale));
+
+  const wc = document.createElement('canvas');
+  wc.width = state.workW;
+  wc.height = state.workH;
+  const wctx = wc.getContext('2d', { willReadFrequently: true });
+  wctx.drawImage(img, 0, 0, state.workW, state.workH);
+  state.workData = wctx.getImageData(0, 0, state.workW, state.workH);
+
+  // detect meaningful native transparency
+  let clear = 0;
+  const d = state.workData.data, n = state.workW * state.workH;
+  for (let i = 0; i < n; i++) if (d[i * 4 + 3] < 200) clear++;
+  state.nativeAlpha = clear / n > 0.005;
+  state.bgMode = 'none';
+  state.params.dpi = 300;
+  Object.keys(cache).forEach((k) => delete cache[k]);
+
+  $('dropHint').hidden = true;
+  $('bgSection').hidden = true;
+  $('btnRemoveBg').disabled = false;
+  $('btnPdf').disabled = false;
+  $('btnPng').disabled = false;
+  setStatus(state.nativeAlpha
+    ? 'Transparency detected — contour follows the design. Ready.'
+    : 'Ready. Click “Remove background” to detect the design edge.');
+  pipeline();
+}
+
+// =====================================================================
+//  Exports
+// =====================================================================
+function download(bytes, name, type) {
+  const url = URL.createObjectURL(bytes instanceof Blob ? bytes : new Blob([bytes], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function fullBounds() {
+  const b = resultBounds(state.result);
+  if (!b) return null;
+  const k = state.workScale;
+  return { x: b.x / k, y: b.y / k, w: b.w / k, h: b.h / k };
+}
+
+function resultToPdfCmds(bf, pageH, dpi) {
+  const r = state.result, k = state.workScale, S = 72 / dpi;
+  const tx = (x) => (x / k - bf.x) * S;
+  const ty = (y) => pageH - (y / k - bf.y) * S;
+  const cmds = [];
+  if (r.kind === 'loops') {
+    for (const L of r.loops) {
+      cmds.push(['m', tx(L[0][0]), ty(L[0][1])]);
+      for (let i = 1; i < L.length; i++) cmds.push(['l', tx(L[i][0]), ty(L[i][1])]);
+      cmds.push(['h']);
+    }
+  } else if (r.kind === 'rect') {
+    cmds.push(['m', tx(r.x), ty(r.y)], ['l', tx(r.x + r.w), ty(r.y)],
+              ['l', tx(r.x + r.w), ty(r.y + r.h)], ['l', tx(r.x), ty(r.y + r.h)], ['h']);
+  } else {
+    cmds.push(...ellipseCmds(tx(r.cx), ty(r.cy), (r.rx / k) * S, (r.ry / k) * S));
+  }
+  return cmds;
+}
+
+$('btnPdf').addEventListener('click', () => {
+  if (!state.result) return;
+  setStatus('Building PDF…');
+  const dpi = state.params.dpi;
+  const bf = fullBounds();
+  const pageW = (bf.w / dpi) * 72, pageH = (bf.h / dpi) * 72;
+
+  const cap = Math.min(1, 6000 / Math.max(bf.w, bf.h));
+  const rw = Math.max(1, Math.round(bf.w * cap)), rh = Math.max(1, Math.round(bf.h * cap));
+  const rc = document.createElement('canvas');
+  rc.width = rw;
+  rc.height = rh;
+  const rctx = rc.getContext('2d');
+  rctx.fillStyle = '#ffffff';
+  rctx.fillRect(0, 0, rw, rh);
+  rctx.imageSmoothingQuality = 'high';
+  rctx.drawImage(procFull, -bf.x * cap, -bf.y * cap, state.fullW * cap, state.fullH * cap);
+
+  const dataUrl = rc.toDataURL('image/jpeg', 0.92);
+  const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+  const jpeg = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) jpeg[i] = bin.charCodeAt(i);
+
+  const pdf = buildPdf({
+    jpeg, imgW: rw, imgH: rh, pageW, pageH,
+    pathCmds: resultToPdfCmds(bf, pageH, dpi),
+    strokePt: 0.5
+  });
+  download(pdf, state.fileBase + '-cutcontour.pdf', 'application/pdf');
+  setStatus('PDF downloaded — artwork + CutContour spot-color cut path.');
+});
+
+$('btnPng').addEventListener('click', () => {
+  if (!state.result) return;
+  const bf = fullBounds();
+  const cap = Math.min(1, 8000 / Math.max(bf.w, bf.h));
+  const rw = Math.max(1, Math.round(bf.w * cap)), rh = Math.max(1, Math.round(bf.h * cap));
+  const rc = document.createElement('canvas');
+  rc.width = rw;
+  rc.height = rh;
+  rc.getContext('2d').drawImage(procFull, -bf.x * cap, -bf.y * cap, state.fullW * cap, state.fullH * cap);
+  rc.toBlob((blob) => {
+    download(blob, state.fileBase + '-bleed.png', 'image/png');
+    setStatus('PNG downloaded — artwork cropped to the cutline box.');
+  }, 'image/png');
+});
+
+updateReadouts();
+draw();
+
+// tiny introspection handle for automated tests
+window.__cutline = { state, cache, pipeline, resultBounds };
+})();
+</script>
+</body>
+</html>
