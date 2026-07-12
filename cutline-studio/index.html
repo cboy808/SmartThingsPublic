@@ -143,11 +143,13 @@
     <section>
       <div class="rowlabel"><h3>Offset (bleed)</h3><span class="val" id="offsetVal">0.125&Prime;</span></div>
       <div class="chips" id="offsetChips">
+        <button data-v="-0.0625">Full bleed</button>
         <button data-v="0">0</button>
         <button data-v="0.0625">1/16&Prime;</button>
         <button data-v="0.125" class="active">1/8&Prime;</button>
       </div>
-      <input type="range" id="offsetSlider" min="0" max="0.25" step="0.0025" value="0.125">
+      <input type="range" id="offsetSlider" min="-0.125" max="0.25" step="0.0025" value="0.125">
+      <div class="hint">Negative cuts inside the art (full bleed &mdash; no white edge).</div>
     </section>
 
     <section>
@@ -612,10 +614,28 @@ function maskBbox(mask, w, h) {
 function closeMask(offPx, rPx) {
   // operates in the PADDED workspace so offsets can extend past the canvas
   const w = cache.pw, h = cache.ph, n = w * h;
-  const D = cache.distOut;
-  const t2 = (offPx + rPx) * (offPx + rPx);
-  const dil = new Uint8Array(n);
-  for (let i = 0; i < n; i++) dil[i] = D[i] <= t2 ? 1 : 0;
+  let dil;
+  if (offPx >= 0) {
+    const D = cache.distOut;
+    const t2 = (offPx + rPx) * (offPx + rPx);
+    dil = new Uint8Array(n);
+    for (let i = 0; i < n; i++) dil[i] = D[i] <= t2 ? 1 : 0;
+  } else {
+    // negative offset: cut INSIDE the art (full bleed) — erode by |offset|
+    if (!cache.distIn) {
+      const bg = new Uint8Array(n);
+      for (let i = 0; i < n; i++) bg[i] = cache.pmask[i] ^ 1;
+      cache.distIn = edtSq(bg, w, h);
+    }
+    const DI = cache.distIn, o2 = offPx * offPx;
+    const ero = new Uint8Array(n);
+    for (let i = 0; i < n; i++) ero[i] = DI[i] > o2 ? 1 : 0;
+    if (rPx <= 0.01) return ero;
+    const de = edtSq(ero, w, h);          // dilate the eroded mask by r
+    const r2a = rPx * rPx;
+    dil = new Uint8Array(n);
+    for (let i = 0; i < n; i++) dil[i] = de[i] <= r2a ? 1 : 0;
+  }
   if (rPx <= 0.01) return dil;
   const bg = new Uint8Array(n);
   for (let i = 0; i < n; i++) bg[i] = dil[i] ^ 1;
@@ -680,9 +700,13 @@ function pipeline() {
     if (cache.bbox) {
       const pm = new Uint8Array(cache.pw * cache.ph);
       for (let y = 0; y < h; y++) pm.set(m.subarray(y * w, (y + 1) * w), (y + pad) * cache.pw + pad);
+      cache.pmask = pm;
       cache.distOut = edtSq(pm, cache.pw, cache.ph);
+      cache.distIn = null;    // computed lazily on first negative offset
     } else {
+      cache.pmask = null;
       cache.distOut = null;
+      cache.distIn = null;
     }
     cache.cKey = '';
   }
@@ -709,15 +733,17 @@ function pipeline() {
     const bw = b.x1 - b.x0 + 1, bh = b.y1 - b.y0 + 1;
     const cx = b.x0 + bw / 2, cy = b.y0 + bh / 2;
     if (p.cutType === 'rect') {
-      state.result = { kind: 'rect', x: b.x0 - offPx, y: b.y0 - offPx, w: bw + 2 * offPx, h: bh + 2 * offPx };
+      const rw = Math.max(2, bw + 2 * offPx), rh = Math.max(2, bh + 2 * offPx);
+      state.result = { kind: 'rect', x: cx - rw / 2, y: cy - rh / 2, w: rw, h: rh };
     } else if (p.cutType === 'square') {
-      const side = Math.max(bw, bh) + 2 * offPx;
+      const side = Math.max(2, Math.max(bw, bh) + 2 * offPx);
       state.result = { kind: 'rect', x: cx - side / 2, y: cy - side / 2, w: side, h: side };
     } else if (p.cutType === 'circle') {
-      const r = Math.sqrt(bw * bw + bh * bh) / 2 + offPx;
+      const r = Math.max(1, Math.sqrt(bw * bw + bh * bh) / 2 + offPx);
       state.result = { kind: 'ellipse', cx, cy, rx: r, ry: r };
     } else {
-      state.result = { kind: 'ellipse', cx, cy, rx: (bw / 2) * Math.SQRT2 + offPx, ry: (bh / 2) * Math.SQRT2 + offPx };
+      state.result = { kind: 'ellipse', cx, cy,
+        rx: Math.max(1, (bw / 2) * Math.SQRT2 + offPx), ry: Math.max(1, (bh / 2) * Math.SQRT2 + offPx) };
     }
   }
 
@@ -789,10 +815,18 @@ function draw() {
   ctx.clearRect(0, 0, bw, bh);
   if (!state.img) return;
 
-  const pad = 28;
-  const s = Math.min((bw - 2 * pad) / state.fullW, (bh - 2 * pad) / state.fullH);
-  const iw = state.fullW * s, ih = state.fullH * s;
-  const ox = (bw - iw) / 2, oy = (bh - ih) / 2;
+  // fit the UNION of the image and the cutline, so the cut never touches the window edge
+  const pad = 36;
+  let ux0 = 0, uy0 = 0, ux1 = state.workW, uy1 = state.workH;
+  const rb = resultBounds(state.result);
+  if (rb) {
+    ux0 = Math.min(ux0, rb.x); uy0 = Math.min(uy0, rb.y);
+    ux1 = Math.max(ux1, rb.x + rb.w); uy1 = Math.max(uy1, rb.y + rb.h);
+  }
+  const sw = Math.min((bw - 2 * pad) / (ux1 - ux0), (bh - 2 * pad) / (uy1 - uy0));
+  const ox = (bw - (ux1 - ux0) * sw) / 2 - ux0 * sw;   // screen position of work-coordinate 0
+  const oy = (bh - (uy1 - uy0) * sw) / 2 - uy0 * sw;
+  const iw = state.workW * sw, ih = state.workH * sw;
 
   if (!checkerPat) {
     const pc = document.createElement('canvas');
@@ -810,7 +844,7 @@ function draw() {
 
   const r = state.result;
   if (!r) return;
-  const kInv = s / state.workScale;         // work px -> screen px
+  const kInv = sw;                          // work px -> screen px
   const X = (x) => ox + x * kInv;
   const Y = (y) => oy + y * kInv;
 
@@ -1028,7 +1062,15 @@ function fullBounds() {
   const b = resultBounds(state.result);
   if (!b) return null;
   const k = state.workScale;
-  return { x: b.x / k, y: b.y / k, w: b.w / k, h: b.h / k };
+  // include artwork that overhangs the cut (that overhang IS the bleed when
+  // the offset is negative / full-bleed)
+  let x0 = b.x, y0 = b.y, x1 = b.x + b.w, y1 = b.y + b.h;
+  const a = cache.bbox;
+  if (a) {
+    x0 = Math.min(x0, a.x0); y0 = Math.min(y0, a.y0);
+    x1 = Math.max(x1, a.x1 + 1); y1 = Math.max(y1, a.y1 + 1);
+  }
+  return { x: x0 / k, y: y0 / k, w: (x1 - x0) / k, h: (y1 - y0) / k };
 }
 
 function resultToPdfCmds(bf, pageH, dpi) {
@@ -1053,9 +1095,10 @@ function resultToPdfCmds(bf, pageH, dpi) {
 
 $('btnPdf').addEventListener('click', () => {
   if (!state.result) return;
+  const bf = fullBounds();
+  if (!bf) { setStatus('Nothing to export — the cutline is empty.'); return; }
   setStatus('Building PDF…');
   const dpi = state.params.dpi;
-  const bf = fullBounds();
   const pageW = (bf.w / dpi) * 72, pageH = (bf.h / dpi) * 72;
 
   const cap = Math.min(1, 6000 / Math.max(bf.w, bf.h));
@@ -1086,6 +1129,7 @@ $('btnPdf').addEventListener('click', () => {
 $('btnPng').addEventListener('click', () => {
   if (!state.result) return;
   const bf = fullBounds();
+  if (!bf) { setStatus('Nothing to export — the cutline is empty.'); return; }
   const cap = Math.min(1, 8000 / Math.max(bf.w, bf.h));
   const rw = Math.max(1, Math.round(bf.w * cap)), rh = Math.max(1, Math.round(bf.h * cap));
   const rc = document.createElement('canvas');
